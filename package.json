@@ -1,0 +1,19 @@
+{
+  "name": "analyze-github-actions",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "type": "module",
+  "dependencies": {
+    "@gauntface/logger": "^3.0.48",
+    "@octokit/rest": "^19.0.5",
+    "fs-extra": "^10.1.0",
+    "meow": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.7"
+  }
+}
