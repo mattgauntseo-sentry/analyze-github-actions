@@ -13,7 +13,7 @@ export async function getCheckRunsForCommit(owner, repo, ref) {
     return d;
   }
 
-  logger.log(`Downloading check runs ${owner}/${repo}@${ref}`);
+  logger.debug(`Downloading check runs ${owner}/${repo}@${ref}`);
   const checks = await octokit.paginate(octokit.checks.listForRef, {
     owner: owner,
     repo,
@@ -32,7 +32,7 @@ export async function getCheckRunAnnotations(owner, repo, crID) {
     return d;
   }
 
-  logger.log(`Downloading check run annotationss ${owner}/${repo}@${crID}`);
+  logger.debug(`Downloading check run annotationss ${owner}/${repo}@${crID}`);
   const annotations = await octokit.paginate(octokit.checks.listAnnotations, {
     owner: owner,
     repo,

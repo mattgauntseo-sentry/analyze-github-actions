@@ -1,3 +1,4 @@
+import { logger } from '@gauntface/logger';
 import meow from 'meow';
 import {getCheckRunsForCommit, cleanupCheckRuns, getCheckRunAnnotations} from './github/checkruns.js';
 import {getLatestCommits} from './github/commits.js';
@@ -24,7 +25,6 @@ const cli = meow({
 });
 
 async function getCommits(org, repo) {
-  console.log(`Getting latest commits for ${org}/${repo}`);
   return await getLatestCommits(org, repo, cli.flags.commits);
 }
 
@@ -33,6 +33,8 @@ const annotationsMsgFilter = [
   /^React Hook useEffect has missing dependencies/,
   /^React Hook useCallback has a missing dependency/,
   /^React Hook useCallback has missing dependencies/,
+  /^'before' field is missing in event payload - changes will be detected from last commit$/,
+  /^Process completed with exit code \d*.$/,
 ];
 function filterOutAnnotationMessage(msg) {
   for (const r of annotationsMsgFilter) {
@@ -69,6 +71,10 @@ async function logAnnotations(owner, repo, checkRuns) {
     }
     const annotations = await getCheckRunAnnotations(owner, repo, cr.id);
     for (const a of annotations) {
+      if (filterOutAnnotationMessage(a.message)) {
+        continue;
+      }
+
       const id = idFromAnnotationMsg(a.message);
       if (!issues[id]) {
         issues[id] = {
@@ -95,25 +101,30 @@ async function logAnnotations(owner, repo, checkRuns) {
   for (const i of Object.values(issues)) {
     issuesArr.push(i);
   }
-  issuesArr.sort((a, b) => b.count - a.count);
-  for (const i of issuesArr) {
-    if (filterOutAnnotationMessage(i.message)) {
-      continue;
-    }
 
-    console.log(`(${i.count}) ${i.id}`);
-    console.log(`    Affected Check Runs:`);
-    for (const cr of Object.values(i.checkRuns)) {
-      console.log(`        ${cr.name}: ${cr.html_url}`);
-    }
-    if (i.actions.length > 0) {
-      console.log(`    Affected Actions:`);
-      for (const a of i.actions) {
-        console.log(`        ${a}`);
+  issuesArr.sort((a, b) => b.count - a.count);
+
+  if (cli.flags.verbose) {
+    for (const i of issuesArr) {
+      console.log(`(${i.count}) ${i.id}`);
+      console.log(`    Affected Check Runs:`);
+      for (const cr of Object.values(i.checkRuns)) {
+        console.log(`        ${cr.name}: ${cr.html_url}`);
       }
+      if (i.actions.length > 0) {
+        console.log(`    Affected Actions:`);
+        for (const a of i.actions) {
+          console.log(`        ${a}`);
+        }
+      }
+      console.log();
     }
-    console.log();
   }
+
+  for (const i of issuesArr) {
+    console.log(`🟡 (${i.count}) ${i.id}`);
+  }
+  console.log();
 }
 
 async function analyzeCommits(repo, commits) {
@@ -139,7 +150,6 @@ async function runOnRepo(org, repo) {
   console.log(`        ${org}/${repo}`);
   console.log(`----------------------------------`);
   const commits = await getCommits(org, repo);
-  console.log(`Examining ${commits.length} commit(s)`);
   await analyzeCommits(repo, commits);
 
 }
@@ -149,16 +159,19 @@ async function runOnOrg(org) {
     return runOnRepo(org, cli.flags.repo);
   }
 
-  console.log(`----------------------------------`);
-  console.log(`        ${org}`);
-  console.log(`----------------------------------`);
-  const repos = await octokit.repos.listForOrg({
+  const repos = await octokit.paginate(octokit.repos.listForOrg, {
     org,
   })
-  console.log(`Examining ${repos.data.length} repo(s)`);
-  for (const r of repos.data) {
+  repos.sort((a, b) => a.name.localeCompare(b.name));
+  for (const r of repos) {
     await runOnRepo(org, r.name);
   }
+
+  console.log();
+  console.log('Run this command it `-v` for full details and links for issues.');
+  console.log();
 }
+
+logger.setLogLevel(cli.flags.verbose ? 0 : 2);
 
 runOnOrg(OWNER);
