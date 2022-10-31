@@ -17,6 +17,7 @@ export async function getCheckRunsForCommit(owner, repo, ref) {
     owner: owner,
     repo,
     ref,
+    status: 'completed',
     per_page: 100,
   });
 
@@ -29,6 +30,7 @@ export function cleanupCheckRuns(checkRuns) {
   const filterNames = [
     // Scheduled
     'lock',
+    'bootstrap',
     'Analyze (python)',
     'Analyze (javascript)',
 
@@ -45,6 +47,9 @@ export function cleanupCheckRuns(checkRuns) {
   ];
   for (const cr of checkRuns) {
     if (filterNames.indexOf(cr.name) != -1) {
+      continue;
+    }
+    if (cr.status != 'completed') {
       continue;
     }
 

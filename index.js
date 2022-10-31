@@ -73,6 +73,9 @@ async function analyzeCommit(repo, ref) {
   const checkRuns = cleanupCheckRuns(
     await getCheckRunsForCommit(OWNER, repo, ref)
   );
+  if (!checkRuns || checkRuns.length == 0) {
+    return null;
+  }
 
   if (cli.flags.verbose) {
     logCheckRuns(OWNER, repo, ref, checkRuns);
@@ -125,6 +128,8 @@ function analyzeCheckRunGroups(checkRuns) {
   }
 
   for (const [key, value] of Object.entries(groupingValues)) {
+    groupingValues[key].durations.sort();
+
     groupingValues[key].meanDuration = value.totalDuration / value.checkRunsCount;
     groupingValues[key].medianDuration = medianValue(value.durations);
     groupingValues[key].q75 = quantile(value.durations, 0.75);
@@ -139,6 +144,10 @@ async function analyzeCommits(repo, commits) {
   const checkRuns = [];
   for (const c of commits) {
     const results = await analyzeCommit(repo, c);
+    if (!results) {
+      continue;
+    }
+
     checkRuns.push(results);
     if (longest == null || longest.duration < results.duration) {
       longest = results;
