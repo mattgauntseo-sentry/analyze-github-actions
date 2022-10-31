@@ -5,6 +5,7 @@ import {getCachedData, setCachedData} from './cache.js';
 
 
 const CATEGORY = 'checkruns';
+const CATEGORY_ANNOTATIONS = 'checkruns-annotations';
 
 export async function getCheckRunsForCommit(owner, repo, ref) {
   const d = await getCachedData(CATEGORY, owner, repo, ref);
@@ -23,6 +24,24 @@ export async function getCheckRunsForCommit(owner, repo, ref) {
 
   await setCachedData(CATEGORY, owner, repo, ref, checks);
   return checks;
+}
+
+export async function getCheckRunAnnotations(owner, repo, crID) {
+  const d = await getCachedData(CATEGORY_ANNOTATIONS, owner, repo, crID);
+  if (d) {
+    return d;
+  }
+
+  logger.log(`Downloading check run annotationss ${owner}/${repo}@${crID}`);
+  const annotations = await octokit.paginate(octokit.checks.listAnnotations, {
+    owner: owner,
+    repo,
+    check_run_id: crID,
+    per_page: 100,
+  });
+
+  await setCachedData(CATEGORY_ANNOTATIONS, owner, repo, crID, annotations);
+  return annotations;
 }
 
 export function cleanupCheckRuns(checkRuns) {

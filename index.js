@@ -1,5 +1,5 @@
 import meow from 'meow';
-import {getCheckRunsForCommit, cleanupCheckRuns} from './github/checkruns.js';
+import {getCheckRunsForCommit, cleanupCheckRuns, getCheckRunAnnotations} from './github/checkruns.js';
 import {getLatestCommits} from './github/commits.js';
 import {logCheckRuns, logLongestCheckRun, logCheckRunGroupingAvgs} from './logging/checkruns.js';
 
@@ -139,6 +139,37 @@ function analyzeCheckRunGroups(checkRuns) {
   logCheckRunGroupingAvgs(groupingValues);
 }
 
+async function logAnnotations(owner, repo, commit) {
+  const issues = {};
+  for (const c of commit) {
+    for (const cr of c.checkRuns) {
+      if (cr.output.annotations_count == 0) {
+        continue;
+      }
+      const annotations = await getCheckRunAnnotations(owner, repo, cr.id);
+      for (const a of annotations) {
+        if (!issues[a.message]) {
+          issues[a.message] = {
+            count: 0,
+            message: a.message,
+            annotations: [],
+          };
+        }
+        issues[a.message].count++;
+        issues[a.message].annotations.push(a);
+      }
+    }
+  }
+  const issuesArr = [];
+  for (const i of Object.values(issues)) {
+    issuesArr.push(i);
+  }
+  issuesArr.sort((a, b) => a.count - b.count);
+  for (const i of issuesArr) {
+    console.log(`${i.message}: ${i.count}`);
+  }
+}
+
 async function analyzeCommits(repo, commits) {
   let longest = null;
   const checkRuns = [];
@@ -162,6 +193,7 @@ async function analyzeCommits(repo, commits) {
 
   logLongestCheckRun(OWNER, repo, longest);
   analyzeCheckRunGroups(checkRuns);
+  logAnnotations(OWNER, repo, checkRuns);
 }
 
 async function runOnRepo(repo) {
