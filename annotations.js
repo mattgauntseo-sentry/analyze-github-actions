@@ -34,6 +34,7 @@ const annotationsMsgFilter = [
   /^React Hook useCallback has missing dependencies/,
   /^'before' field is missing in event payload - changes will be detected from last commit$/,
   /^Process completed with exit code \d*.$/,
+  /^It took \d* tries to successfully aquire a Unity license/,
 ];
 function filterOutAnnotationMessage(msg) {
   for (const r of annotationsMsgFilter) {
@@ -102,19 +103,30 @@ async function logAnnotations(owner, repo, checkRuns) {
     issuesArr.push(i);
   }
 
+  if (issuesArr.length == 0 && cli.flags.verbose) {
+    console.log(`✅ ${owner}/${repo}`);
+    console.log();
+  }
+
+  if (issuesArr.length == 0) {
+    return;
+  }
+
+  console.log(`❌ ${owner}/${repo}`);
+
   issuesArr.sort((a, b) => b.count - a.count);
 
   if (cli.flags.verbose) {
     for (const i of issuesArr) {
-      console.log(`(${i.count}) ${i.id}`);
-      console.log(`    Affected Check Runs:`);
+      console.log(`    (${i.count}) ${i.id}`);
+      console.log(`        Affected Check Runs:`);
       for (const cr of Object.values(i.checkRuns)) {
-        console.log(`        ${cr.name}: ${cr.html_url}`);
+        console.log(`            ${cr.name}: ${cr.html_url}`);
       }
       if (i.actions.length > 0) {
-        console.log(`    Affected Actions:`);
+        console.log(`        Affected Actions:`);
         for (const a of i.actions) {
-          console.log(`        ${a}`);
+          console.log(`            ${a}`);
         }
       }
       console.log();
@@ -122,7 +134,7 @@ async function logAnnotations(owner, repo, checkRuns) {
   }
 
   for (const i of issuesArr) {
-    console.log(`🟡 (${i.count}) ${i.id}`);
+    console.log(`    🟡 (${i.count}) ${i.id}`);
   }
   console.log();
 }
@@ -140,15 +152,10 @@ async function analyzeCommits(repo, commits) {
     checkRuns.push(...crs);
   }
 
-  // Add new line in case node logs warnings from fetch
-  console.log();
   logAnnotations(OWNER, repo, checkRuns);
 }
 
 async function runOnRepo(org, repo) {
-  console.log(`----------------------------------`);
-  console.log(`        ${org}/${repo}`);
-  console.log(`----------------------------------`);
   const commits = await getCommits(org, repo);
   await analyzeCommits(repo, commits);
 
