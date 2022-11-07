@@ -1,9 +1,9 @@
 import {logger} from '@gauntface/logger';
 import {octokit} from './octokit.js';
-
+import {retryTask} from '../utils/retries.js';
 import {getCachedData, setCachedData} from './cache.js';
 
-
+const MAX_RETRIES = 5;
 const CATEGORY = 'checkruns';
 const CATEGORY_ANNOTATIONS = 'checkruns-annotations';
 
@@ -13,17 +13,26 @@ export async function getCheckRunsForCommit(owner, repo, ref) {
     return d;
   }
 
-  logger.debug(`Downloading check runs ${owner}/${repo}@${ref}`);
-  const checks = await octokit.paginate(octokit.checks.listForRef, {
-    owner: owner,
-    repo,
-    ref,
-    status: 'completed',
-    per_page: 100,
-  });
+  logger.debug(`Getting check runs for ${owner}/${repo} @ ${ref}`);
+  try {
+    const checks = await retryTask(MAX_RETRIES, async function() {
+      logger.debug(`Downloading check runs ${owner}/${repo}@${ref}`);
+      return await octokit.paginate(octokit.checks.listForRef, {
+        owner: owner,
+        repo,
+        ref,
+        status: 'completed',
+        per_page: 100,
+      });
+    })
 
-  await setCachedData(CATEGORY, owner, repo, ref, checks);
-  return checks;
+    await setCachedData(CATEGORY, owner, repo, ref, checks);
+    return checks;
+  } catch (err) {
+    logger.warn(`Failed to get check runs for ${owner}/${repo} @ ${ref}`);
+  }
+  return [];
+
 }
 
 export async function getCheckRunAnnotations(owner, repo, crID) {

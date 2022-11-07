@@ -3,6 +3,7 @@ import meow from 'meow';
 import {getCheckRunsForCommit, cleanupCheckRuns, getCheckRunAnnotations} from './github/checkruns.js';
 import {getLatestCommits} from './github/commits.js';
 import { octokit } from './github/octokit.js';
+import { sleep } from './utils/sleep.js';
 
 const OWNER = 'getsentry';
 
@@ -142,14 +143,15 @@ async function logAnnotations(owner, repo, checkRuns) {
 async function analyzeCommits(repo, commits) {
   const checkRuns = [];
   for (const c of commits) {
-    const crs = cleanupCheckRuns(
-      await getCheckRunsForCommit(OWNER, repo, c)
-    );
+    const crs = cleanupCheckRuns(await getCheckRunsForCommit(OWNER, repo, c));
     if (!crs) {
       continue;
     }
 
     checkRuns.push(...crs);
+
+    // Sleep to reduce the risk that GitHub gets cranky
+    sleep(1000);
   }
 
   logAnnotations(OWNER, repo, checkRuns);
@@ -163,7 +165,7 @@ async function runOnRepo(org, repo) {
 
 async function runOnOrg(org) {
   if (cli.flags.repo) {
-    return runOnRepo(org, cli.flags.repo);
+    return await runOnRepo(org, cli.flags.repo);
   }
 
   const repos = await octokit.paginate(octokit.repos.listForOrg, {
@@ -175,7 +177,7 @@ async function runOnOrg(org) {
   }
 
   console.log();
-  console.log('Run this command it `-v` for full details and links for issues.');
+  console.log('Run this command with `-v` for full details and links for issues.');
   console.log();
 }
 
