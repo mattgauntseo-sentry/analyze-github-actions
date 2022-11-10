@@ -1,25 +1,33 @@
-import { logger } from '@gauntface/logger';
 import meow from 'meow';
 import {getCheckRunsForCommit, cleanupCheckRuns, getCheckRunAnnotations} from './github/checkruns.js';
 import {getLatestCommits} from './github/commits.js';
 import { octokit } from './github/octokit.js';
-import { sleep } from './utils/sleep.js';
-
-const OWNER = 'getsentry';
+import {createObjectCsvWriter} from 'csv-writer';
 
 const cli = meow({
   importMeta: import.meta,
 	flags: {
+    org: {
+      type: 'string',
+      default: 'getsentry',
+    },
     repo: {
       type: 'string',
     },
-    'commits': {
+    commits: {
       type: 'number',
       default: 10,
     },
     verbose: {
       type: 'boolean',
       alias: 'v',
+    },
+    allIssues: {
+      type: 'boolean',
+      default: false,
+    },
+    csv: {
+      type: 'string',
     }
 	}
 });
@@ -28,29 +36,11 @@ async function getCommits(org, repo) {
   return await getLatestCommits(org, repo, cli.flags.commits);
 }
 
-const annotationsMsgFilter = [
-  /^React Hook useEffect has a missing dependency/,
-  /^React Hook useEffect has missing dependencies/,
-  /^React Hook useCallback has a missing dependency/,
-  /^React Hook useCallback has missing dependencies/,
-  /^'before' field is missing in event payload - changes will be detected from last commit$/,
-  /^Process completed with exit code \d*.$/,
-  /^It took \d* tries to successfully aquire a Unity license/,
-];
-function filterOutAnnotationMessage(msg) {
-  for (const r of annotationsMsgFilter) {
-    if (msg.match(r)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 const urlReg = /.*(https:\/\/github.blog\/changelog\/[^\/]*\/).*/;
-function idFromAnnotationMsg(msg) {
+function githubURLFromMsg(msg) {
   const m = msg.match(urlReg);
   if (!m) {
-    return msg;
+    return null;
   }
   return m[1];
 }
@@ -64,7 +54,7 @@ function actionsFromMsg(msg) {
   return m[1].split(", ");
 }
 
-async function logAnnotations(owner, repo, checkRuns) {
+async function processAnnotations(owner, repo, checkRuns) {
   const issues = {};
   for (const cr of checkRuns) {
     if (cr.output.annotations_count == 0) {
@@ -73,11 +63,12 @@ async function logAnnotations(owner, repo, checkRuns) {
 
     const annotations = await getCheckRunAnnotations(owner, repo, cr.id);
     for (const a of annotations) {
-      if (filterOutAnnotationMessage(a.message)) {
+      const ghurl = githubURLFromMsg(a.message);
+      if (!ghurl && !cli.flags.allIssues) {
         continue;
       }
 
-      const id = idFromAnnotationMsg(a.message);
+      const id = ghurl || a.message;
       if (!issues[id]) {
         issues[id] = {
           count: 0,
@@ -103,22 +94,24 @@ async function logAnnotations(owner, repo, checkRuns) {
   for (const i of Object.values(issues)) {
     issuesArr.push(i);
   }
+  issuesArr.sort((a, b) => b.count - a.count);
+  return issuesArr;
+}
 
-  if (issuesArr.length == 0 && cli.flags.verbose) {
+async function logAnnotations(owner, repo, annotations) {
+  if (annotations.length == 0 && cli.flags.verbose) {
     console.log(`✅ ${owner}/${repo}`);
     console.log();
   }
 
-  if (issuesArr.length == 0) {
+  if (annotations.length == 0) {
     return;
   }
 
   console.log(`❌ ${owner}/${repo}`);
 
-  issuesArr.sort((a, b) => b.count - a.count);
-
   if (cli.flags.verbose) {
-    for (const i of issuesArr) {
+    for (const i of annotations) {
       console.log(`    (${i.count}) ${i.id}`);
       console.log(`        Affected Check Runs:`);
       for (const cr of Object.values(i.checkRuns)) {
@@ -134,53 +127,97 @@ async function logAnnotations(owner, repo, checkRuns) {
     }
   }
 
-  for (const i of issuesArr) {
+  for (const i of annotations) {
     console.log(`    🟡 (${i.count}) ${i.id}`);
   }
   console.log();
 }
 
-async function analyzeCommits(repo, commits) {
+async function analyzeCommits(owner, repo, commits) {
   const checkRuns = [];
   for (const c of commits) {
-    const crs = cleanupCheckRuns(await getCheckRunsForCommit(OWNER, repo, c));
+    const crs = cleanupCheckRuns(await getCheckRunsForCommit(owner, repo, c));
     if (!crs) {
       continue;
     }
 
     checkRuns.push(...crs);
-
-    // Sleep to reduce the risk that GitHub gets cranky
-    sleep(1000);
   }
 
-  logAnnotations(OWNER, repo, checkRuns);
+  const annotations = await processAnnotations(owner, repo, checkRuns);
+  logAnnotations(owner, repo, annotations);
+  return annotations;
+}
+
+async function saveCSV(org, repoannotations) {
+  if (!cli.flags.csv) {
+    return;
+  }
+
+  const header = [
+    { id: 'org', title: 'Owner' },
+    { id: 'repo', title: 'Repo' },
+    { id: 'count', title: 'Issue Count' },
+    { id: 'links', title: 'Issue Link / Description' },
+    { id: 'actions', title: 'Affected Actions' },
+    { id: 'example_runs', title: 'Example runs' },
+  ];
+  const data = [];
+  for (const [repo, ras] of Object.entries(repoannotations)) {
+    if (ras.length == 0) {
+      data.push({
+        org,
+        repo,
+        count:0,
+      });
+      continue;
+    }
+
+    for (const ra of ras) {
+      data.push({
+        org,
+        repo,
+        count: ra.count,
+        links: ra.id,
+        actions: ra.actions.join("\n"),
+        example_runs: Object.values(ra.checkRuns).map(cr => cr.html_url).join("\n"),
+      });
+    }
+
+    const csvWriter = createObjectCsvWriter({
+      path: cli.flags.csv,
+      header,
+    });
+    await csvWriter.writeRecords(data);
+  }
+  console.log(`CSV file written: ${cli.flags.csv}`);
 }
 
 async function runOnRepo(org, repo) {
   const commits = await getCommits(org, repo);
-  await analyzeCommits(repo, commits);
-
+  return await analyzeCommits(org, repo, commits);
 }
 
-async function runOnOrg(org) {
+async function runOnRepos(org, repos) {
+  const ra = {};
+  for (const r of repos) {
+    const annotations = await runOnRepo(org, r);
+    ra[r] = annotations;
+  }
+  await saveCSV(org, ra);
+}
+
+async function main(org) {
   if (cli.flags.repo) {
-    return await runOnRepo(org, cli.flags.repo);
+    return await runOnRepos(org, [cli.flags.repo]);
   }
 
   const repos = await octokit.paginate(octokit.repos.listForOrg, {
     org,
   })
-  repos.sort((a, b) => a.name.localeCompare(b.name));
-  for (const r of repos) {
-    await runOnRepo(org, r.name);
-  }
-
-  console.log();
-  console.log('Run this command with `-v` for full details and links for issues.');
-  console.log();
+  const reponames = repos.map(r => r.name)
+  reponames.sort((a, b) => a.localeCompare(b));
+  await runOnRepos(org, reponames);
 }
 
-logger.setLogLevel(cli.flags.verbose ? 0 : 2);
-
-runOnOrg(OWNER);
+main(cli.flags.org);

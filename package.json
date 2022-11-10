@@ -8,8 +8,10 @@
   },
   "type": "module",
   "dependencies": {
-    "@gauntface/logger": "^3.0.48",
+    "@octokit/core": "^4.1.0",
+    "@octokit/plugin-throttling": "^4.3.2",
     "@octokit/rest": "^19.0.5",
+    "csv-writer": "^1.6.0",
     "fs-extra": "^10.1.0",
     "meow": "^11.0.0"
   },
