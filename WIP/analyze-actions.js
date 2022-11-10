@@ -1,7 +1,7 @@
 import meow from 'meow';
-import {getCheckRunsForCommit, cleanupCheckRuns, getCheckRunAnnotations} from './github/checkruns.js';
-import {getLatestCommits} from './github/commits.js';
-import {logCheckRuns, logLongestCheckRun, logCheckRunGroupingAvgs} from './logging/checkruns.js';
+import {getCheckRunsForCommit, cleanupCheckRuns, getCheckRunAnnotations} from '../github/checkruns.js';
+import {getLatestCommits} from '../github/commits.js';
+import {logCheckRuns, logLongestCheckRun, logCheckRunGroupingAvgs} from '../logging/checkruns.js';
 
 const OWNER = 'getsentry';
 
