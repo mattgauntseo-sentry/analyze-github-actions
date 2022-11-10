@@ -34,6 +34,3 @@ Run on an all repos in getsentry and output csv:
 ```sh
 node annotations.js --commit=10 --csv=annotations.csv
 ```
-
-
-Future exploration: https://gist.github.com/asottile-sentry/894fa81c92b64165efee13c72af6c344
